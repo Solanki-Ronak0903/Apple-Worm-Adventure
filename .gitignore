@@ -1,0 +1,42 @@
+/vendor
+/node_modules
+/public/build
+/public/hot
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Laravel cache and generated files
+/bootstrap/cache/*.php
+/storage/*.key
+/storage/logs/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+
+# Testing
+/.phpunit.cache
+.phpunit.result.cache
+
+# IDE and OS files
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+
+/storage/logs/*
+!/storage/logs/.gitignore
