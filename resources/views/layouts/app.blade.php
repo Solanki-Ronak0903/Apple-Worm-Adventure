@@ -7,6 +7,7 @@
     <title>@yield('title', 'Apple Worm Adventure') · AWA</title>
     <link rel="stylesheet" href="{{ asset('css/app.css') }}">
     <link rel="stylesheet" href="{{ asset('css/auth.css') }}">
+    @stack('styles')
 </head>
 <body>
     <header class="topbar" id="siteHeader">
@@ -24,6 +25,7 @@
             <a href="{{ route('home') }}">Home</a>
             @auth
                 <a href="{{ route('dashboard') }}">Dashboard</a>
+                <a href="{{ route('account') }}">Account</a>
                 <a href="{{ route('levels') }}">Levels</a>
                 <a href="{{ route('wallet') }}">Wallet</a>
                 <a href="{{ route('leaderboard') }}">Leaderboard</a>
@@ -42,10 +44,15 @@
     </header>
     <main class="page-wrap">
         @if(session('status'))<div class="notice">{{ session('status') }}</div>@endif
+        @auth
+            @if(!auth()->user()->hasVerifiedEmail())
+                <div class="notice">Your email address is not verified. <a href="{{ route('verification.notice') }}">Verify it now</a>.</div>
+            @endif
+        @endauth
         @if($errors->any())<div class="notice error">{{ $errors->first() }}</div>@endif
         @yield('content')
     </main>
-    <footer class="footer">An original puzzle-game prototype · Built with Laravel + JavaScript · Rewarded ads are simulated in development</footer>
+    <footer class="footer">An original side-view puzzle adventure · Built with Laravel + JavaScript · Rewarded ads are simulated in development</footer>
     <script>
         (() => {
             const toggle = document.getElementById('navToggle');

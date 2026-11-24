@@ -14,9 +14,9 @@ class InitialReleaseLevelsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_first_release_publishes_25_safe_route_levels_and_hides_future_levels(): void
+    public function test_first_release_migration_hides_existing_future_levels_and_seeder_preserves_later_admin_choice(): void
     {
-        Level::create([
+        $futureLevel = Level::create([
             'number' => 26,
             'title' => 'Future Level 26',
             'difficulty' => 'expert',
@@ -26,12 +26,38 @@ class InitialReleaseLevelsTest extends TestCase
             'is_published' => true,
         ]);
 
+        // In production this migration runs once before the initial seeder.
+        // RefreshDatabase has already run the migrations, so invoke this
+        // migration against the pre-existing future row to verify that policy.
+        $initialReleaseMigration = require database_path('migrations/2026_11_02_000001_limit_initial_release_to_25_levels.php');
+        $initialReleaseMigration->up();
+
         $this->seed(DatabaseSeeder::class);
 
         $this->assertSame(25, Level::where('is_published', true)->count());
         $this->assertDatabaseHas('levels', ['number' => 26, 'is_published' => 0]);
 
-        foreach (Level::where('is_published', true)->orderBy('number')->get() as $level) {
+        // The migration updates the row through the query builder, so the
+        // previously-created Eloquent instance still holds its old in-memory
+        // value. Refresh it before simulating an administrator publishing it.
+        $futureLevel->refresh();
+        $this->assertFalse($futureLevel->is_published);
+
+        // Once an administrator explicitly publishes a future level, running
+        // the seeder again must not silently reverse that decision.
+        $futureLevel->update(['is_published' => true]);
+        $this->assertTrue($futureLevel->fresh()->is_published);
+
+        $this->seed(DatabaseSeeder::class);
+        $this->assertTrue($futureLevel->fresh()->is_published);
+
+        // Only the original 25 campaign maps are subject to this release's
+        // planned-route assertions. Level 26 is a future placeholder in this
+        // test and intentionally has no approved puzzle configuration yet.
+        foreach (Level::where('is_published', true)
+            ->whereBetween('number', [1, 25])
+            ->orderBy('number')
+            ->get() as $level) {
             $config = $level->config;
             $this->assertArrayHasKey('plannedRoute', $config);
             $this->assertArrayNotHasKey('goldenApple', $config);
@@ -118,7 +144,14 @@ class InitialReleaseLevelsTest extends TestCase
             'state' => [
                 'won' => true,
                 'lost' => false,
+                'worm' => array_reverse(array_slice($level25->config['plannedRoute'], -7)),
                 'apples' => [],
+                'goldenApples' => [],
+                'megaApples' => [],
+                'mysteryApples' => [],
+                'keys' => [],
+                'switches' => [],
+                'growthPending' => 0,
                 'moves' => 1,
                 'score' => 100,
             ],

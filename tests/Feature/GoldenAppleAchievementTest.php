@@ -8,6 +8,7 @@ use App\Models\Level;
 use App\Models\User;
 use App\Models\UserAchievement;
 use App\Models\UserLevelProgress;
+use App\Models\UserLevelReward;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
 use App\Services\AchievementService;
@@ -45,7 +46,7 @@ class GoldenAppleAchievementTest extends TestCase
     {
         $this->seed(DatabaseSeeder::class);
         $player = User::create(['name' => 'Golden Player', 'email' => 'golden@example.test', 'password' => 'secret-password']);
-        $level = Level::where('number', 5)->firstOrFail();
+        $level = $this->useLegacyBoard(Level::where('number', 5)->firstOrFail());
         UserLevelProgress::create(['user_id' => $player->id, 'level_id' => $level->id, 'unlocked' => true]);
         Wallet::create(['user_id' => $player->id, 'coins' => 100]);
 
@@ -98,10 +99,16 @@ class GoldenAppleAchievementTest extends TestCase
             'achievement_id' => Achievement::where('code', 'first_apple')->value('id'),
         ]);
 
-        $this->postJson(route('game.complete', $session))
+        $completion = $this->postJson(route('game.complete', $session))
             ->assertOk()
             ->assertJsonPath('golden_apples_collected', 1)
             ->assertJsonPath('golden_bonus_coins', 20);
+
+        // The route redesign can change the move count, which can legitimately
+        // change the star tier. Derive the first-clear reward from the stars
+        // returned by the completion endpoint instead of hard-coding 80 coins.
+        $expectedLevelCoins = 50 + ((int) $completion->json('stars') * 10);
+        $this->assertSame($expectedLevelCoins, (int) $completion->json('level_coins_earned'));
 
         $this->assertDatabaseHas('user_level_progress', [
             'user_id' => $player->id,
@@ -112,8 +119,20 @@ class GoldenAppleAchievementTest extends TestCase
         $this->assertDatabaseHas('wallet_transactions', [
             'user_id' => $player->id,
             'type' => 'level_reward',
-            'amount' => 100,
-            'reference' => 'level-' . $session->id,
+            'amount' => $expectedLevelCoins,
+            'reference' => 'level-completion-' . $player->id . '-' . $level->id,
+        ]);
+        $this->assertDatabaseHas('wallet_transactions', [
+            'user_id' => $player->id,
+            'type' => 'golden_apple_reward',
+            'amount' => 20,
+            'reference' => 'golden-apple-' . $player->id . '-' . $level->id . '-up-to-1',
+        ]);
+        $this->assertDatabaseHas('wallet_transactions', [
+            'user_id' => $player->id,
+            'type' => 'achievement_reward',
+            'amount' => 10,
+            'reference' => 'achievement-' . $player->id . '-' . Achievement::where('code', 'first_apple')->value('id'),
         ]);
     }
 
@@ -132,6 +151,13 @@ class GoldenAppleAchievementTest extends TestCase
                 'completed' => true,
                 'stars' => 0,
                 'golden_apples_collected' => 1,
+            ]);
+            UserLevelReward::create([
+                'user_id' => $player->id,
+                'level_id' => $level->id,
+                'reward_code' => 'golden_apple_completion',
+                'quantity' => 1,
+                'coins_awarded' => 20,
             ]);
         }
 
@@ -208,7 +234,7 @@ class GoldenAppleAchievementTest extends TestCase
         $this->assertSame(1, WalletTransaction::where('user_id', $player->id)->where('type', 'achievement_reward')->count());
     }
 
-    public function test_replaying_a_completed_level_does_not_pay_its_golden_coin_bonus_again(): void
+    public function test_replaying_a_completed_level_does_not_pay_base_or_golden_coin_rewards_again(): void
     {
         $this->seed(DatabaseSeeder::class);
         $player = User::create(['name' => 'Replay Player', 'email' => 'replay@example.test', 'password' => 'secret-password']);
@@ -243,20 +269,180 @@ class GoldenAppleAchievementTest extends TestCase
             ->assertOk()
             ->assertJsonPath('golden_bonus_coins', 20);
 
+        // Resetting visible progress must not erase the permanent per-level reward record.
+        $this->post(route('account.reset-progress'), ['password' => 'secret-password'])
+            ->assertRedirect(route('dashboard'));
+        UserLevelProgress::firstOrCreate([
+            'user_id' => $player->id,
+            'level_id' => $level->id,
+        ], ['unlocked' => true]);
+
         $secondSession = $createWinningSession();
         $this->postJson(route('game.complete', $secondSession))
             ->assertOk()
+            ->assertJsonPath('coins_earned', 0)
+            ->assertJsonPath('level_coins_earned', 0)
             ->assertJsonPath('golden_bonus_coins', 0);
 
-        $this->assertSame(280, (int) Wallet::where('user_id', $player->id)->value('coins'));
+        // The first clear paid the base and Golden Apple rewards. Replaying after
+        // a progress reset pays neither reward again.
+        $this->assertSame(200, (int) Wallet::where('user_id', $player->id)->value('coins'));
         $this->assertDatabaseHas('wallet_transactions', [
-            'reference' => 'level-' . $firstSession->id,
-            'amount' => 100,
-        ]);
-        $this->assertDatabaseHas('wallet_transactions', [
-            'reference' => 'level-' . $secondSession->id,
+            'reference' => 'level-completion-' . $player->id . '-' . $level->id,
             'amount' => 80,
+        ]);
+        $this->assertDatabaseMissing('wallet_transactions', [
+            'reference' => 'level-' . $secondSession->id,
+        ]);
+        $this->assertDatabaseHas('user_level_rewards', [
+            'user_id' => $player->id,
+            'level_id' => $level->id,
+            'reward_code' => 'level_completion',
+            'quantity' => 1,
+            'coins_awarded' => 80,
+        ]);
+        $this->assertSame(1, WalletTransaction::where(
+            'reference',
+            'golden-apple-' . $player->id . '-' . $level->id . '-up-to-1'
+        )->count());
+        $this->assertDatabaseHas('user_level_rewards', [
+            'user_id' => $player->id,
+            'level_id' => $level->id,
+            'reward_code' => 'golden_apple_completion',
+            'quantity' => 1,
         ]);
     }
 
+
+    public function test_double_score_applies_to_points_collected_after_claim(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $player = User::create(['name' => 'Double Score', 'email' => 'double-score@example.test', 'password' => 'secret-password']);
+        $level = $this->useLegacyBoard(Level::where('number', 1)->firstOrFail());
+        UserLevelProgress::create(['user_id' => $player->id, 'level_id' => $level->id, 'unlocked' => true]);
+        $config = $level->config;
+        $session = GameSession::create([
+            'user_id' => $player->id,
+            'level_id' => $level->id,
+            'status' => 'active',
+            'state' => [
+                'worm' => [$config['wormStart']],
+                'apples' => $config['apples'],
+                'goldenApples' => [],
+                'goldenApplesCollected' => 0,
+                'moves' => 0,
+                'score' => 10,
+                'bonus_moves' => 0,
+                'won' => false,
+                'lost' => false,
+            ],
+        ]);
+
+        $this->actingAs($player)->postJson(route('game.reward', $session), [
+            'action' => 'double_score',
+            'claim_token' => (string) \Illuminate\Support\Str::uuid(),
+        ])->assertOk();
+
+        foreach (array_slice($config['plannedRoute'], 1) as $index => $next) {
+            $previous = $config['plannedRoute'][$index];
+            $direction = $next['x'] > $previous['x'] ? 'right'
+                : ($next['x'] < $previous['x'] ? 'left'
+                : ($next['y'] > $previous['y'] ? 'down' : 'up'));
+            $response = $this->postJson(route('game.move', $session), ['direction' => $direction])->assertOk();
+        }
+
+        $this->assertTrue((bool) $response->json('won'));
+        $this->assertSame(240, (int) $response->json('state.score'));
+        $this->postJson(route('game.complete', $session))->assertOk()->assertJsonPath('score', 240);
+    }
+
+    public function test_rewarded_hint_returns_a_safe_direction_and_is_limited_per_session(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $player = User::create(['name' => 'Hint Player', 'email' => 'hint-player@example.test', 'password' => 'secret-password']);
+        $level = Level::where('number', 1)->firstOrFail();
+        $config = $level->config;
+        $session = GameSession::create([
+            'user_id' => $player->id,
+            'level_id' => $level->id,
+            'status' => 'active',
+            'state' => [
+                'worm' => [$config['wormStart']],
+                'apples' => $config['apples'],
+                'goldenApples' => [],
+                'goldenApplesCollected' => 0,
+                'moves' => 0,
+                'score' => 0,
+                'won' => false,
+                'lost' => false,
+            ],
+        ]);
+
+        $this->actingAs($player);
+        $first = $this->postJson(route('game.reward', $session), [
+            'action' => 'hint',
+            'claim_token' => (string) \Illuminate\Support\Str::uuid(),
+        ])->assertOk();
+
+        // Restarting the board must not reset the session's rewarded-hint allowance.
+        $this->postJson(route('game.restart', $session))
+            ->assertOk()
+            ->assertJsonPath('state.rewarded_hints_used', 1);
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $this->postJson(route('game.reward', $session), [
+                'action' => 'hint',
+                'claim_token' => (string) \Illuminate\Support\Str::uuid(),
+            ])->assertOk();
+        }
+
+        $this->assertNotEmpty($first->json('hint'));
+        $this->assertContains($first->json('hint_direction'), ['up', 'down', 'left', 'right']);
+        $this->assertSame(3, (int) $session->fresh()->state['rewarded_hints_used']);
+
+        $this->postJson(route('game.reward', $session), [
+            'action' => 'hint',
+            'claim_token' => (string) \Illuminate\Support\Str::uuid(),
+        ])->assertStatus(422);
+    }
+
+    public function test_double_coins_doubles_the_level_completion_payout(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $player = User::create(['name' => 'Double Coins', 'email' => 'double-coins@example.test', 'password' => 'secret-password']);
+        $level = Level::where('number', 6)->firstOrFail();
+        UserLevelProgress::create(['user_id' => $player->id, 'level_id' => $level->id, 'unlocked' => true]);
+        $session = GameSession::create([
+            'user_id' => $player->id,
+            'level_id' => $level->id,
+            'status' => 'active',
+            'state' => ['won' => true, 'lost' => false, 'apples' => [], 'moves' => 1, 'score' => 120, 'double_coins_claimed' => false],
+        ]);
+
+        $this->actingAs($player)->postJson(route('game.reward', $session), [
+            'action' => 'double_coins',
+            'claim_token' => (string) \Illuminate\Support\Str::uuid(),
+        ])->assertOk();
+
+        $this->postJson(route('game.complete', $session))
+            ->assertOk()
+            ->assertJsonPath('coins_earned', 160);
+
+        $this->assertSame(275, (int) Wallet::where('user_id', $player->id)->value('coins')); // 100 opening + 15 Reward Explorer + 160 doubled level reward
+        $this->assertDatabaseHas('wallet_transactions', [
+            'reference' => 'level-completion-' . $player->id . '-' . $level->id,
+            'amount' => 160,
+        ]);
+    }
+
+
+    /** Preserve legacy movement coverage without weakening the new side-view route guard. */
+    private function useLegacyBoard(Level $level): Level
+    {
+        $config = $level->config;
+        unset($config['sideView'], $config['boardMode'], $config['world']);
+        $level->forceFill(['config' => $config])->save();
+
+        return $level->fresh();
+    }
 }

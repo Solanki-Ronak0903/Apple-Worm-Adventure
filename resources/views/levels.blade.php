@@ -27,10 +27,11 @@
         return $level->number === 1 || (bool) ($record?->unlocked);
     })->count();
 
-    // Each breakpoint gets its own serpentine row grouping.
-    $desktopRows = $levels->values()->chunk(5)->map(fn ($row) => $row->values())->values();
-    $tabletRows = $levels->values()->chunk(3)->map(fn ($row) => $row->values())->values();
-    $mobileRows = $levels->values()->chunk(2)->map(fn ($row) => $row->values())->values();
+    // Keep each five-level world together at every responsive breakpoint.
+    $worldGroups = $levels->groupBy(fn ($level) => intdiv($level->number - 1, 5))->values();
+    $desktopRows = $worldGroups->map(fn ($worldLevels) => $worldLevels->values())->values();
+    $tabletRows = $worldGroups->flatMap(fn ($worldLevels) => $worldLevels->chunk(3)->map(fn ($row) => $row->values()))->values();
+    $mobileRows = $worldGroups->flatMap(fn ($worldLevels) => $worldLevels->chunk(2)->map(fn ($row) => $row->values()))->values();
 @endphp
 
 <style>
@@ -253,6 +254,17 @@
 
     .worm-trail-board--tablet, .worm-trail-board--mobile { display: none; }
 
+
+    .worm-map-world-heading { display: flex; align-items: center; gap: 12px; margin: 9px 2px -17px; }
+    .worm-world-mark { display: grid; place-items: center; width: 39px; height: 39px; flex: 0 0 39px; border: 2px solid #fff; border-radius: 14px; background: #8ed38a; color: #245b3b; font-size: 14px; font-weight: 1000; box-shadow: 0 3px 0 #b6dba7; }
+    .worm-world-mark--forest { background: #80c99a; }
+    .worm-world-mark--ruins { background: #e1bd82; color: #6b4a2e; box-shadow: 0 3px 0 #cda875; }
+    .worm-world-mark--crystal { background: #b9c6f5; color: #4c5297; box-shadow: 0 3px 0 #9da9de; }
+    .worm-world-mark--sky { background: #b5e3f7; color: #356c88; box-shadow: 0 3px 0 #91c9e5; }
+    .worm-map-world-heading small { display: block; color: #7e9c83; font-size: 8px; font-weight: 950; letter-spacing: .15em; }
+    .worm-map-world-heading strong { display: block; margin-top: 1px; color: #315f43; font-size: 16px; font-weight: 950; }
+    .worm-map-world-heading em { display: block; color: #819987; font-size: 10px; font-style: normal; }
+
     @keyframes sceneWormWiggle { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-7px) rotate(3deg); } }
     @keyframes sceneBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
     @keyframes wormArrive { 0% { opacity: 0; transform: translate(-28px, 7px) rotate(-18deg) scale(.78); } 70% { opacity: 1; transform: translate(4px, -5px) rotate(8deg) scale(1.08); } 100% { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); } }
@@ -372,7 +384,14 @@
         {{-- Desktop: five small stops per row, alternating direction. --}}
         <div class="worm-trail-board worm-trail-board--desktop" aria-label="Winding level trail">
             @foreach($desktopRows as $rowIndex => $row)
-                @php $isReverse = ($rowIndex % 2) === 1; @endphp
+                @php
+                    $isReverse = ($rowIndex % 2) === 1;
+                    $worldConfig = $row->first()?->config['world'] ?? [];
+                @endphp
+                <div class="worm-map-world-heading">
+                    <span class="worm-world-mark worm-world-mark--{{ $worldConfig['theme'] ?? 'meadow' }}" aria-hidden="true">{{ $rowIndex + 1 }}</span>
+                    <div><small>WORLD {{ str_pad($rowIndex + 1, 2, '0', STR_PAD_LEFT) }}</small><strong>{{ $worldConfig['name'] ?? 'Adventure World' }}</strong><em>{{ $worldConfig['description'] ?? 'Explore the next part of the trail.' }}</em></div>
+                </div>
                 <div class="worm-trail-row">
                     @foreach($row as $position => $level)
                         @php

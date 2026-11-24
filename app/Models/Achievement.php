@@ -6,10 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class Achievement extends Model
 {
-    protected $fillable = ['code', 'name', 'description', 'icon', 'criteria'];
+    protected $fillable = ['code', 'name', 'description', 'icon', 'criteria', 'is_active'];
     protected function casts(): array
     {
-        return ['criteria' => 'array'];
+        return ['criteria' => 'array', 'is_active' => 'boolean'];
     }
 
     public function userAchievements()

@@ -1,0 +1,3 @@
+This older 2.5D run-and-jump prototype installation note is obsolete.
+
+Use PATCH-INSTRUCTIONS.md for the current side-view tile-puzzle update and README.md for setup, controls, architecture and QA scope.

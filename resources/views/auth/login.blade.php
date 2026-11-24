@@ -36,6 +36,7 @@
             <span class="auth-input-wrap"><span aria-hidden="true">🔒</span><input id="password" name="password" type="password" required autocomplete="current-password" placeholder="Enter your password"></span>
             @error('password')<small class="auth-field-error">{{ $message }}</small>@enderror
         </label>
+        <p class="auth-switch"><a href="{{ route('password.request') }}">Forgot your password?</a></p>
         <label class="auth-remember"><input type="checkbox" name="remember" value="1"> <span>Remember me on this device</span></label>
         <button class="auth-submit" type="submit">Let's play <span aria-hidden="true">➜</span></button>
         <p class="auth-switch">New to the adventure? <a href="{{ route('register') }}">Create an account</a></p>

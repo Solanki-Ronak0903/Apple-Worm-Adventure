@@ -37,11 +37,12 @@
             @error('email')<small class="auth-field-error">{{ $message }}</small>@enderror
         </label>
         <label class="auth-field" for="password">Password
-            <span class="auth-input-wrap"><span aria-hidden="true">🔒</span><input id="password" name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters"></span>
+            <span class="auth-input-wrap"><span aria-hidden="true">🔒</span><input id="password" name="password" type="password" required minlength="12" autocomplete="new-password" placeholder="At least 12 characters"></span>
             @error('password')<small class="auth-field-error">{{ $message }}</small>@enderror
         </label>
+        <small class="auth-field-error">Use at least 12 characters with uppercase and lowercase letters, a number and a symbol.</small>
         <label class="auth-field" for="password_confirmation">Confirm password
-            <span class="auth-input-wrap"><span aria-hidden="true">🔐</span><input id="password_confirmation" name="password_confirmation" type="password" required minlength="8" autocomplete="new-password" placeholder="Type it one more time"></span>
+            <span class="auth-input-wrap"><span aria-hidden="true">🔐</span><input id="password_confirmation" name="password_confirmation" type="password" required minlength="12" autocomplete="new-password" placeholder="Type it one more time"></span>
         </label>
         <button class="auth-submit" type="submit">Create my account <span aria-hidden="true">➜</span></button>
         <p class="auth-switch">Already have an account? <a href="{{ route('login') }}">Log in</a></p>
